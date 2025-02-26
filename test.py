@@ -14,7 +14,7 @@ app.config['MYSQL_CURSORCLASS'] = 'DictCursor'
 
 @app.route('/')
 def index():
-    return render_template('car.html')  
+    return render_template('index.html')  
 
 @app.route('/about_us')
 def about_us():
