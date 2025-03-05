@@ -1,22 +1,27 @@
 from flask import Flask, render_template, jsonify, request
 import pymysql
 import os
+from vercel_python import Vercel
 
 app = Flask(__name__)
 
-db_params = {
-    "host": os.getenv("MYSQL_HOST"),
-    "user": os.getenv("MYSQL_USER"),
-    "password": os.getenv("MYSQL_PASSWORD"),
-    "database": os.getenv("MYSQL_DB"),
-    "port": int(os.getenv("MYSQL_PORT", 3306)),
-    "cursorclass": pymysql.cursors.DictCursor,
-    "ssl": {"ca": os.getenv("MYSQL_SSL_CA")} if os.getenv("MYSQL_SSL_CA") else None,
-}
+# MySQL Configuration
+app.config['MYSQL_HOST'] = os.getenv('MYSQL_HOST')
+app.config['MYSQL_USER'] = os.getenv('MYSQL_USER')
+app.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD')
+app.config['MYSQL_DB'] = os.getenv('MYSQL_DB')
+
+def get_db_connection():
+    return pymysql.connect(
+        host=app.config['MYSQL_HOST'],
+        user=app.config['MYSQL_USER'],
+        password=app.config['MYSQL_PASSWORD'],
+        database=app.config['MYSQL_DB']
+    )
 
 @app.route('/')
 def index():
-    return render_template('index.html')  
+    return render_template('index.html')
 
 @app.route('/about_us')
 def about_us():
@@ -58,28 +63,28 @@ def fetch_recommendation():
         else:
             price_range = 'Beyond Luxury'
 
-        conn = pymysql.connect(**db_params)
-        with conn.cursor() as cur:
+        connection = get_db_connection()
+        with connection.cursor(pymysql.cursors.DictCursor) as cursor:
             query = "SELECT * FROM recommendations WHERE price_range = %s AND fuel_type = %s ORDER BY RAND() LIMIT 1"
-            cur.execute(query, (price_range, fuel_type))
-            recommendation_data = cur.fetchone()
+            cursor.execute(query, (price_range, fuel_type))
+            recommendation_data = cursor.fetchone()
 
-        conn.close()
+        connection.close()
 
         if recommendation_data:
             return jsonify({
-                "recommendation": recommendation_data['recommendation'],
-                "image_url": recommendation_data['image_url'],
+                "recommendation": recommendation_data["recommendation"],
+                "image_url": recommendation_data["image_url"],
                 "car_specs": {
-                    "mileage_arai": recommendation_data['mileage_arai'],
-                    "engine_displacement": recommendation_data['engine_displacement'],
-                    "max_power": recommendation_data['max_power'],
-                    "max_torque": recommendation_data['max_torque'],
-                    "length": recommendation_data['length'],
-                    "width": recommendation_data['width'],
-                    "height": recommendation_data['height'],
-                    "ground_clearance": recommendation_data['ground_clearance'],
-                    "boot_space": recommendation_data['boot_space']
+                    "mileage_arai": recommendation_data["mileage_arai"],
+                    "engine_displacement": recommendation_data["engine_displacement"],
+                    "max_power": recommendation_data["max_power"],
+                    "max_torque": recommendation_data["max_torque"],
+                    "length": recommendation_data["length"],
+                    "width": recommendation_data["width"],
+                    "height": recommendation_data["height"],
+                    "ground_clearance": recommendation_data["ground_clearance"],
+                    "boot_space": recommendation_data["boot_space"]
                 }
             })
         else:
@@ -87,5 +92,4 @@ def fetch_recommendation():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-def handler(event, context):
-    return app(event, context)
+vc_handler = Vercel(app)
