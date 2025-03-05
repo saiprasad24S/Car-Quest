@@ -1,21 +1,18 @@
 from flask import Flask, render_template, jsonify, request
-from flask_mysqldb import MySQL
+import pymysql
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
 
 app = Flask(__name__)
 
-mysql = MySQL(app)
-
-app.config['MYSQL_HOST'] = os.getenv('MYSQL_HOST')
-app.config['MYSQL_USER'] = os.getenv('MYSQL_USER')
-app.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD')
-app.config['MYSQL_DB'] = os.getenv('MYSQL_DB')
-app.config['MYSQL_PORT'] = int(os.getenv('MYSQL_PORT'))
-app.config['MYSQL_CURSORCLASS'] = os.getenv('MYSQL_CURSORCLASS')
-app.config['MYSQL_SSL_CA'] = os.getenv('MYSQL_SSL_CA')
+db_params = {
+    "host": os.getenv("MYSQL_HOST"),
+    "user": os.getenv("MYSQL_USER"),
+    "password": os.getenv("MYSQL_PASSWORD"),
+    "database": os.getenv("MYSQL_DB"),
+    "port": int(os.getenv("MYSQL_PORT", 3306)),
+    "cursorclass": pymysql.cursors.DictCursor,
+    "ssl": {"ca": os.getenv("MYSQL_SSL_CA")} if os.getenv("MYSQL_SSL_CA") else None,
+}
 
 @app.route('/')
 def index():
@@ -61,38 +58,34 @@ def fetch_recommendation():
         else:
             price_range = 'Beyond Luxury'
 
-        cur = mysql.connection.cursor()
-        query = "SELECT * FROM recommendations WHERE price_range = %s AND fuel_type = %s ORDER BY RAND() LIMIT 1"
-        cur.execute(query, (price_range, fuel_type))
-        recommendation_data = cur.fetchone()
-        cur.close()
+        conn = pymysql.connect(**db_params)
+        with conn.cursor() as cur:
+            query = "SELECT * FROM recommendations WHERE price_range = %s AND fuel_type = %s ORDER BY RAND() LIMIT 1"
+            cur.execute(query, (price_range, fuel_type))
+            recommendation_data = cur.fetchone()
+
+        conn.close()
 
         if recommendation_data:
-            recommendation = recommendation_data['recommendation']
-            image_url = recommendation_data['image_url']
-            car_specs = {
-                "mileage_arai": recommendation_data['mileage_arai'],
-                "engine_displacement": recommendation_data['engine_displacement'],
-                "max_power": recommendation_data['max_power'],
-                "max_torque": recommendation_data['max_torque'],
-                "length": recommendation_data['length'],
-                "width": recommendation_data['width'],
-                "height": recommendation_data['height'],
-                "ground_clearance": recommendation_data['ground_clearance'],
-                "boot_space": recommendation_data['boot_space']
-            }
             return jsonify({
-                "recommendation": recommendation,
-                "image_url": image_url,
-                "car_specs": car_specs
+                "recommendation": recommendation_data['recommendation'],
+                "image_url": recommendation_data['image_url'],
+                "car_specs": {
+                    "mileage_arai": recommendation_data['mileage_arai'],
+                    "engine_displacement": recommendation_data['engine_displacement'],
+                    "max_power": recommendation_data['max_power'],
+                    "max_torque": recommendation_data['max_torque'],
+                    "length": recommendation_data['length'],
+                    "width": recommendation_data['width'],
+                    "height": recommendation_data['height'],
+                    "ground_clearance": recommendation_data['ground_clearance'],
+                    "boot_space": recommendation_data['boot_space']
+                }
             })
         else:
             return jsonify({"recommendation": "No recommendation found.", "image_url": ""}), 200
     except Exception as e:
-        print("Error:", e)
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run()
-
-
