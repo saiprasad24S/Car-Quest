@@ -116,7 +116,8 @@ def fetch_recommendation():
         print("Error:", e)
         return jsonify({"error": str(e)}), 500
 
-# For Vercel serverless deployment
+# Vercel needs to find 'app' variable
+# This exports the Flask app for Vercel
 app = app
 
 if __name__ == '__main__':
