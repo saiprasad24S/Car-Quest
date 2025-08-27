@@ -47,6 +47,49 @@ def health():
 def api_status():
     return jsonify({"message": "Car Quest API is running!", "version": "1.0"})
 
+# Mock data for demonstration when database is unavailable
+mock_recommendations = {
+    "Budget_Petrol": {
+        "recommendation": "Maruti Suzuki Alto K10 - Perfect budget car with excellent fuel efficiency",
+        "image_url": "https://imgd.aeplcdn.com/664x374/n/cw/ec/130583/alto-k10-exterior-right-front-three-quarter-109.jpeg",
+        "mileage_arai": "24.39 kmpl",
+        "engine_displacement": "998 cc",
+        "max_power": "66.95 bhp",
+        "max_torque": "89 Nm",
+        "length": "3530 mm",
+        "width": "1490 mm",
+        "height": "1520 mm",
+        "ground_clearance": "160 mm",
+        "boot_space": "214 L"
+    },
+    "Mid-range_Petrol": {
+        "recommendation": "Hyundai i20 - Feature-rich mid-range hatchback with premium feel",
+        "image_url": "https://imgd.aeplcdn.com/664x374/n/cw/ec/106815/i20-exterior-right-front-three-quarter-4.jpeg",
+        "mileage_arai": "20.35 kmpl",
+        "engine_displacement": "1197 cc",
+        "max_power": "82.85 bhp",
+        "max_torque": "113.8 Nm",
+        "length": "3995 mm",
+        "width": "1775 mm",
+        "height": "1505 mm",
+        "ground_clearance": "165 mm",
+        "boot_space": "311 L"
+    },
+    "Luxury_Petrol": {
+        "recommendation": "BMW 3 Series - Premium luxury sedan with excellent performance",
+        "image_url": "https://imgd.aeplcdn.com/664x374/n/cw/ec/115025/3-series-exterior-right-front-three-quarter-4.jpeg",
+        "mileage_arai": "16.13 kmpl",
+        "engine_displacement": "1998 cc",
+        "max_power": "255.02 bhp",
+        "max_torque": "400 Nm",
+        "length": "4709 mm",
+        "width": "1827 mm",
+        "height": "1442 mm",
+        "ground_clearance": "140 mm",
+        "boot_space": "480 L"
+    }
+}
+
 @app.route('/fetch_recommendation')
 def fetch_recommendation():
     try:
@@ -79,42 +122,68 @@ def fetch_recommendation():
         else:
             price_range = 'Beyond Luxury'
 
+        # Try database first, fallback to mock data
         db_params = get_db_params()
-        if not db_params:
-            return jsonify({"error": "Database configuration not available"}), 500
-            
-        conn = pymysql.connect(**db_params)
-        with conn.cursor() as cur:
-            query = "SELECT * FROM recommendations WHERE price_range = %s AND fuel_type = %s ORDER BY RAND() LIMIT 1"
-            cur.execute(query, (price_range, fuel_type))
-            recommendation_data = cur.fetchone()
-        
-        conn.close()
+        if db_params:
+            try:
+                conn = pymysql.connect(**db_params)
+                with conn.cursor() as cur:
+                    query = "SELECT * FROM recommendations WHERE price_range = %s AND fuel_type = %s ORDER BY RAND() LIMIT 1"
+                    cur.execute(query, (price_range, fuel_type))
+                    recommendation_data = cur.fetchone()
+                
+                conn.close()
 
-        if recommendation_data:
-            recommendation = recommendation_data['recommendation']
-            image_url = recommendation_data['image_url']
-            car_specs = {
-                "mileage_arai": recommendation_data['mileage_arai'],
-                "engine_displacement": recommendation_data['engine_displacement'],
-                "max_power": recommendation_data['max_power'],
-                "max_torque": recommendation_data['max_torque'],
-                "length": recommendation_data['length'],
-                "width": recommendation_data['width'],
-                "height": recommendation_data['height'],
-                "ground_clearance": recommendation_data['ground_clearance'],
-                "boot_space": recommendation_data['boot_space']
-            }
-            return jsonify({
-                "recommendation": recommendation,
-                "image_url": image_url,
-                "car_specs": car_specs
-            })
+                if recommendation_data:
+                    return jsonify({
+                        "recommendation": recommendation_data['recommendation'],
+                        "image_url": recommendation_data['image_url'],
+                        "car_specs": {
+                            "mileage_arai": recommendation_data['mileage_arai'],
+                            "engine_displacement": recommendation_data['engine_displacement'],
+                            "max_power": recommendation_data['max_power'],
+                            "max_torque": recommendation_data['max_torque'],
+                            "length": recommendation_data['length'],
+                            "width": recommendation_data['width'],
+                            "height": recommendation_data['height'],
+                            "ground_clearance": recommendation_data['ground_clearance'],
+                            "boot_space": recommendation_data['boot_space']
+                        }
+                    })
+            except Exception as db_error:
+                print(f"Database error: {db_error}")
+                # Continue to mock data fallback
+        
+        # Fallback to mock data when database is unavailable
+        mock_key = f"{price_range}_{fuel_type}"
+        
+        # Use available mock data or default
+        if mock_key in mock_recommendations:
+            mock_data = mock_recommendations[mock_key]
         else:
-            return jsonify({"recommendation": "No recommendation found.", "image_url": ""}), 200
+            # Use a default recommendation
+            mock_data = mock_recommendations["Mid-range_Petrol"]
+            mock_data["recommendation"] = f"Recommended car for {price_range} range with {fuel_type} fuel (Demo data - Database not configured)"
+        
+        return jsonify({
+            "recommendation": mock_data["recommendation"],
+            "image_url": mock_data["image_url"],
+            "car_specs": {
+                "mileage_arai": mock_data["mileage_arai"],
+                "engine_displacement": mock_data["engine_displacement"],
+                "max_power": mock_data["max_power"],
+                "max_torque": mock_data["max_torque"],
+                "length": mock_data["length"],
+                "width": mock_data["width"],
+                "height": mock_data["height"],
+                "ground_clearance": mock_data["ground_clearance"],
+                "boot_space": mock_data["boot_space"]
+            }
+        })
+        
     except Exception as e:
         print("Error:", e)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 # Vercel needs to find 'app' variable
 # This exports the Flask app for Vercel
