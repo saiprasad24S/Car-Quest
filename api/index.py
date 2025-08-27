@@ -4,15 +4,24 @@ import os
 
 app = Flask(__name__, template_folder='../templates')
 
-db_params = {
-    "host": os.getenv("MYSQL_HOST"),
-    "user": os.getenv("MYSQL_USER"),
-    "password": os.getenv("MYSQL_PASSWORD"),
-    "database": os.getenv("MYSQL_DB"),
-    "port": int(os.getenv("MYSQL_PORT", 3306)),
-    "cursorclass": pymysql.cursors.DictCursor,
-    "ssl": {"ca": os.getenv("MYSQL_SSL_CA")} if os.getenv("MYSQL_SSL_CA") else None,
-}
+# Database configuration with error handling
+def get_db_params():
+    required_env_vars = ["MYSQL_HOST", "MYSQL_USER", "MYSQL_PASSWORD", "MYSQL_DB"]
+    missing_vars = [var for var in required_env_vars if not os.getenv(var)]
+    
+    if missing_vars:
+        print(f"Missing environment variables: {missing_vars}")
+        return None
+    
+    return {
+        "host": os.getenv("MYSQL_HOST"),
+        "user": os.getenv("MYSQL_USER"),
+        "password": os.getenv("MYSQL_PASSWORD"),
+        "database": os.getenv("MYSQL_DB"),
+        "port": int(os.getenv("MYSQL_PORT", 3306)),
+        "cursorclass": pymysql.cursors.DictCursor,
+        "ssl": {"ca": os.getenv("MYSQL_SSL_CA")} if os.getenv("MYSQL_SSL_CA") else None,
+    }
 
 @app.route('/')
 def index():
@@ -25,6 +34,18 @@ def about_us():
 @app.route('/contact_us')
 def contact_us():
     return render_template('contact_us.html')
+
+@app.route('/health')
+def health():
+    return jsonify({
+        "status": "healthy", 
+        "service": "Car Quest",
+        "database_configured": get_db_params() is not None
+    })
+
+@app.route('/api/status')
+def api_status():
+    return jsonify({"message": "Car Quest API is running!", "version": "1.0"})
 
 @app.route('/fetch_recommendation')
 def fetch_recommendation():
@@ -58,6 +79,10 @@ def fetch_recommendation():
         else:
             price_range = 'Beyond Luxury'
 
+        db_params = get_db_params()
+        if not db_params:
+            return jsonify({"error": "Database configuration not available"}), 500
+            
         conn = pymysql.connect(**db_params)
         with conn.cursor() as cur:
             query = "SELECT * FROM recommendations WHERE price_range = %s AND fuel_type = %s ORDER BY RAND() LIMIT 1"
@@ -92,8 +117,7 @@ def fetch_recommendation():
         return jsonify({"error": str(e)}), 500
 
 # For Vercel serverless deployment
-def handler(request):
-    return app(request.environ, lambda status, headers: None)
+app = app
 
 if __name__ == '__main__':
     app.run(debug=True)
