@@ -1,21 +1,18 @@
-import os
 from flask import Flask, render_template, jsonify, request
-from flask_mysqldb import MySQL
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
+import pymysql
+import os
 
 app = Flask(__name__, template_folder='../templates')
 
-mysql = MySQL(app)
-
-# Configure MySQL using environment variables with fallbacks
-app.config['MYSQL_HOST'] = os.getenv('MYSQL_HOST', 'localhost')
-app.config['MYSQL_USER'] = os.getenv('MYSQL_USER', 'root')
-app.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD', '15313037S@i')
-app.config['MYSQL_DB'] = os.getenv('MYSQL_DB', 'car_quest')
-app.config['MYSQL_CURSORCLASS'] = 'DictCursor'
+db_params = {
+    "host": os.getenv("MYSQL_HOST"),
+    "user": os.getenv("MYSQL_USER"),
+    "password": os.getenv("MYSQL_PASSWORD"),
+    "database": os.getenv("MYSQL_DB"),
+    "port": int(os.getenv("MYSQL_PORT", 3306)),
+    "cursorclass": pymysql.cursors.DictCursor,
+    "ssl": {"ca": os.getenv("MYSQL_SSL_CA")} if os.getenv("MYSQL_SSL_CA") else None,
+}
 
 @app.route('/')
 def index():
@@ -61,11 +58,13 @@ def fetch_recommendation():
         else:
             price_range = 'Beyond Luxury'
 
-        cur = mysql.connection.cursor()
-        query = "SELECT * FROM recommendations WHERE price_range = %s AND fuel_type = %s ORDER BY RAND() LIMIT 1"
-        cur.execute(query, (price_range, fuel_type))
-        recommendation_data = cur.fetchone()
-        cur.close()
+        conn = pymysql.connect(**db_params)
+        with conn.cursor() as cur:
+            query = "SELECT * FROM recommendations WHERE price_range = %s AND fuel_type = %s ORDER BY RAND() LIMIT 1"
+            cur.execute(query, (price_range, fuel_type))
+            recommendation_data = cur.fetchone()
+        
+        conn.close()
 
         if recommendation_data:
             recommendation = recommendation_data['recommendation']
