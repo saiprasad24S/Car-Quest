@@ -6,18 +6,12 @@ app = Flask(__name__, template_folder='../templates')
 
 # Database configuration with error handling
 def get_db_params():
-    required_env_vars = ["MYSQL_HOST", "MYSQL_USER", "MYSQL_PASSWORD", "MYSQL_DB"]
-    missing_vars = [var for var in required_env_vars if not os.getenv(var)]
-    
-    if missing_vars:
-        print(f"Missing environment variables: {missing_vars}")
-        return None
-    
+    # Use environment variables if available, otherwise use defaults
     return {
-        "host": os.getenv("MYSQL_HOST"),
-        "user": os.getenv("MYSQL_USER"),
-        "password": os.getenv("MYSQL_PASSWORD"),
-        "database": os.getenv("MYSQL_DB"),
+        "host": os.getenv("MYSQL_HOST", "localhost"),
+        "user": os.getenv("MYSQL_USER", "root"),
+        "password": os.getenv("MYSQL_PASSWORD", "15313037S@i"),
+        "database": os.getenv("MYSQL_DB", "car_quest250"),
         "port": int(os.getenv("MYSQL_PORT", 3306)),
         "cursorclass": pymysql.cursors.DictCursor,
         "ssl": {"ca": os.getenv("MYSQL_SSL_CA")} if os.getenv("MYSQL_SSL_CA") else None,
@@ -46,6 +40,60 @@ def health():
 @app.route('/api/status')
 def api_status():
     return jsonify({"message": "Car Quest API is running!", "version": "1.0"})
+
+@app.route('/test-db')
+def test_db():
+    """Test database connection and show table structure"""
+    db_params = get_db_params()
+    
+    try:
+        conn = pymysql.connect(**db_params)
+        
+        with conn.cursor() as cur:
+            # Test connection
+            cur.execute("SELECT 1")
+            
+            # Show tables
+            cur.execute("SHOW TABLES")
+            tables = cur.fetchall()
+            
+            # Check recommendations table structure
+            cur.execute("DESCRIBE recommendations")
+            table_structure = cur.fetchall()
+            
+            # Count recommendations
+            cur.execute("SELECT COUNT(*) as count FROM recommendations")
+            count_result = cur.fetchone()
+            
+            # Sample data
+            cur.execute("SELECT price_range, fuel_type, recommendation FROM recommendations LIMIT 5")
+            sample_data = cur.fetchall()
+            
+        conn.close()
+        
+        return jsonify({
+            "status": "success",
+            "message": "Database connection successful",
+            "database_info": {
+                "host": db_params['host'],
+                "database": db_params['database'],
+                "tables": tables,
+                "recommendations_count": count_result['count'],
+                "table_structure": table_structure,
+                "sample_data": sample_data
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Database connection failed: {str(e)}",
+            "connection_params": {
+                "host": db_params.get('host', 'Not set'),
+                "database": db_params.get('database', 'Not set'),
+                "user": db_params.get('user', 'Not set')
+            }
+        })
 
 # Mock data for demonstration when database is unavailable
 mock_recommendations = {
@@ -174,19 +222,29 @@ def fetch_recommendation():
         else:
             price_range = 'Beyond Luxury'
 
-        # Try database first, fallback to mock data
+        # Database connection - prioritize database over mock data
         db_params = get_db_params()
-        if db_params:
-            try:
-                conn = pymysql.connect(**db_params)
-                with conn.cursor() as cur:
-                    query = "SELECT * FROM recommendations WHERE price_range = %s AND fuel_type = %s ORDER BY RAND() LIMIT 1"
-                    cur.execute(query, (price_range, fuel_type))
-                    recommendation_data = cur.fetchone()
+        
+        if not db_params:
+            return jsonify({
+                "error": "Database not configured. Please set environment variables: MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DB"
+            }), 500
+            
+        try:
+            # Connect to database
+            conn = pymysql.connect(**db_params)
+            print(f"Successfully connected to database: {db_params['host']}")
+            
+            with conn.cursor() as cur:
+                # Query database for recommendations
+                query = "SELECT * FROM recommendations WHERE price_range = %s AND fuel_type = %s ORDER BY RAND() LIMIT 1"
+                print(f"Executing query: {query} with params: ({price_range}, {fuel_type})")
+                cur.execute(query, (price_range, fuel_type))
+                recommendation_data = cur.fetchone()
                 
-                conn.close()
-
                 if recommendation_data:
+                    print(f"Found recommendation: {recommendation_data['recommendation'][:50]}...")
+                    conn.close()
                     return jsonify({
                         "recommendation": recommendation_data['recommendation'],
                         "image_url": recommendation_data['image_url'],
@@ -202,36 +260,22 @@ def fetch_recommendation():
                             "boot_space": recommendation_data['boot_space']
                         }
                     })
-            except Exception as db_error:
-                print(f"Database error: {db_error}")
-                # Continue to mock data fallback
-        
-        # Fallback to mock data when database is unavailable
-        mock_key = f"{price_range}_{fuel_type}"
-        
-        # Use available mock data or default
-        if mock_key in mock_recommendations:
-            mock_data = mock_recommendations[mock_key]
-        else:
-            # Use a default recommendation
-            mock_data = mock_recommendations["Mid-range_Petrol"]
-            mock_data["recommendation"] = f"Recommended car for {price_range} range with {fuel_type} fuel (Demo data - Database not configured)"
-        
-        return jsonify({
-            "recommendation": mock_data["recommendation"],
-            "image_url": mock_data["image_url"],
-            "car_specs": {
-                "mileage_arai": mock_data["mileage_arai"],
-                "engine_displacement": mock_data["engine_displacement"],
-                "max_power": mock_data["max_power"],
-                "max_torque": mock_data["max_torque"],
-                "length": mock_data["length"],
-                "width": mock_data["width"],
-                "height": mock_data["height"],
-                "ground_clearance": mock_data["ground_clearance"],
-                "boot_space": mock_data["boot_space"]
-            }
-        })
+                else:
+                    print(f"No recommendations found for {price_range} + {fuel_type}")
+                    conn.close()
+                    return jsonify({"recommendation": "No car recommendations found for your criteria.", "image_url": ""}), 200
+                    
+        except pymysql.Error as db_error:
+            print(f"Database connection error: {db_error}")
+            return jsonify({
+                "error": f"Database connection failed: {str(db_error)}"
+            }), 500
+            
+        except Exception as e:
+            print(f"Unexpected database error: {e}")
+            return jsonify({
+                "error": f"Database error: {str(e)}"
+            }), 500
         
     except Exception as e:
         print("Error:", e)
